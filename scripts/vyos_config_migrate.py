@@ -1,11 +1,13 @@
 #!/usr/bin/python3
+
 import sys
 import os
-import subprocess
 import re
 import argparse
 import logging
+import subprocess
 import fileinput
+import datetime
 
 vyos_config_migrate_dir = r'/opt/vyatta/etc/config-migrate'
 system_version_dir = os.path.join(vyos_config_migrate_dir, 'current')
@@ -23,12 +25,13 @@ def get_config_file_versions(config_file_handle):
     for config_line in config_file_handle:
         if re.match(r'/\* === vyatta-config-version:.+=== \*/$', config_line):
             if not re.match(r'/\* === vyatta-config-version:\s+"([\w,-]+@\d+:)+([\w,-]+@\d+)"\s+=== \*/$', config_line):
-                raise ValueError("malformed configuration string: {}".format(config_line))
+                raise ValueError("malformed configuration string: "
+                        "{}".format(config_line))
 
             for pair in re.findall(r'([\w,-]+)@(\d+)', config_line):
                 if pair[0] in config_file_versions.keys():
-                    logging.info("duplicate unit name: {} in string: {}".format(pair[0],
-                        config_line)) 
+                    logging.info("duplicate unit name: {} in string: "
+                            "{}".format(pair[0], config_line)) 
                 config_file_versions[pair[0]] = int(pair[1])
 
     return config_file_versions
@@ -43,7 +46,8 @@ def get_system_versions():
     try:
         version_info = os.listdir(system_version_dir)
     except OSError as err: 
-        logging.critical("Unable to read directory {}".format(system_version_dir))
+        logging.critical("Unable to read directory "
+                "{}".format(system_version_dir))
         print("OS error: {}".format(err))
         sys.exit(1)
 
@@ -81,12 +85,16 @@ def write_config_file_version_string(config_file_name, config_versions):
     remove_config_file_version_string(config_file_name)
 
     with open(config_file_name, 'a') as config_file_handle:
+        config_file_handle.write('\n')
         config_file_handle.write('/* Warning: Do not remove the following line. */\n')
         config_file_handle.write('/* === vyatta-config-version: "{}" === */\n'.format(component_versions)) 
         config_file_handle.write('/* Release version: {} */\n'.format(version_string))
 
 def update_config_versions(config_file_name):
     """
+    Invoke migration scripts 'n-to-m' in migration_util_dir to
+    iteratively update components in the config file from version n to
+    m, until config file version is consistent with current system.
     """
     with open(config_file_name, 'r') as config_file_handle: 
         conf_versions = get_config_file_versions(config_file_handle)
@@ -130,7 +138,8 @@ def update_config_versions(config_file_name):
                 subprocess.check_output([migrate_script,
                     config_file_name])
             except FileNotFoundError:
-                logging.debug("Migration script {} does not exist; not fatal".format(migrate_script))
+                logging.debug("Migration script {} does not exist; "
+                        "not fatal".format(migrate_script))
             except subprocess.CalledProcessError as err:
                 logging.critical("Fatal error {}".format(err))
                 print("Called process error: {}".format(err))
@@ -140,16 +149,17 @@ def update_config_versions(config_file_name):
 
         updated_config_versions.append('{}@{}'.format(key, conf_ver))
 
-    write_config_file_version_string(config_file_name, updated_config_versions)
+    write_config_file_version_string(config_file_name,
+            updated_config_versions)
 
 def main():
     argparser = argparse.ArgumentParser()
     argparser.add_argument("config_file", type=str,
             help="configuration file to migrate")
-    argparser.add_argument("--debug", help="Turn on debugging.",
-            action="store_true")
-    argparser.add_argument("--log-to-stdout", help="Show log messages on stdout.",
-            action="store_true")
+    argparser.add_argument("--debug", action="store_true",
+            help="Turn on debugging.")
+    argparser.add_argument("--log-to-stdout", action="store_true",
+            help="Show log messages on stdout.")
     args = argparser.parse_args()
 
     try:
@@ -169,13 +179,26 @@ def main():
     config_file_name = args.config_file
 
     if not os.access(config_file_name, os.R_OK):
-        logging.critical("Unable to read config file {}".format(config_file_name))
+        logging.critical("Unable to read config file "
+                "{}".format(config_file_name))
         print("Read error: {}".format(config_file_name))
         sys.exit(1)
 
     if not os.access(config_file_name, os.W_OK):
-        logging.critical("Unable to modify config file {}".format(config_file_name))
+        logging.critical("Unable to modify config file "
+                "{}".format(config_file_name))
         print("Write error: {}".format(config_file_name))
+        sys.exit(1)
+
+    separator = "."
+    backup_file_name = separator.join([config_file_name,
+    '{0:%Y-%m-%d-%H%M}'.format(datetime.datetime.now()), 'pre-migration'])
+    try:
+        subprocess.check_output(['cp', '-p', config_file_name,
+            backup_file_name])
+    except subprocess.CalledProcessError as err:
+        logging.critical("Fatal error {}".format(err))
+        print("Called process error: {}".format(err))
         sys.exit(1)
 
     update_config_versions(config_file_name)

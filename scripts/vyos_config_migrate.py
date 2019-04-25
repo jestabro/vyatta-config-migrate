@@ -9,11 +9,14 @@ import subprocess
 import fileinput
 import datetime
 
-vyos_config_migrate_dir = r'/opt/vyatta/etc/config-migrate'
-system_version_dir = os.path.join(vyos_config_migrate_dir, 'current')
-migrate_util_dir = os.path.join(vyos_config_migrate_dir, 'migrate')
-migrate_log = r'/var/log/vyatta/migrate.log'
-vyos_version = r'/opt/vyatta/etc/version'
+vyatta_config_migrate_dir = '/opt/vyatta/etc/config-migrate'
+vyatta_system_version_dir = os.path.join(vyatta_config_migrate_dir, 'current')
+vyatta_migrate_util_dir = os.path.join(vyatta_config_migrate_dir, 'migrate')
+vyatta_migrate_log = '/var/log/vyatta/migrate.log'
+vyatta_version = '/opt/vyatta/etc/version'
+# Until directory reorganization
+vyos_version = vyatta_version
+
 
 def get_config_file_versions(config_file_handle):
     """
@@ -31,7 +34,18 @@ def get_config_file_versions(config_file_handle):
             for pair in re.findall(r'([\w,-]+)@(\d+)', config_line):
                 if pair[0] in config_file_versions.keys():
                     logging.info("duplicate unit name: {} in string: "
-                            "{}".format(pair[0], config_line)) 
+                            "{}".format(pair[0], config_line))
+                config_file_versions[pair[0]] = int(pair[1])
+
+        if re.match(r'@ === vyos-config-version:.+', config_line):
+            if not re.match(r'@ === vyos-config-version:\s+"([\w,-]+@\d+:)+([\w,-]+@\d+)"\s*', config_line):
+                raise ValueError("malformed configuration string: "
+                        "{}".format(config_line))
+
+            for pair in re.findall(r'([\w,-]+)@(\d+)', config_line):
+                if pair[0] in config_file_versions.keys():
+                    logging.info("duplicate unit name: {} in string: "
+                            "{}".format(pair[0], config_line))
                 config_file_versions[pair[0]] = int(pair[1])
 
     return config_file_versions
@@ -44,10 +58,10 @@ def get_system_versions():
     system_versions = {}
 
     try:
-        version_info = os.listdir(system_version_dir)
+        version_info = os.listdir(vyatta_system_version_dir)
     except OSError as err: 
         logging.critical("Unable to read directory "
-                "{}".format(system_version_dir))
+                "{}".format(vyatta_system_version_dir))
         print("OS error: {}".format(err))
         sys.exit(1)
 
@@ -69,6 +83,12 @@ def remove_config_file_version_string(config_file_name):
             continue
         if re.match(r'/\* Release version:.+ \*/$', line):
             continue
+        if re.match('@ === vyos-config-version:.+', line):
+            continue
+        if re.match('@ Warning:.+', line):
+            continue
+        if re.match('@ Release version:.+', line):
+            continue
         sys.stdout.write(line)
 
 
@@ -82,22 +102,26 @@ def write_config_file_version_string(config_file_name, config_versions):
     with open(vyos_version, 'r') as version:
         version_string = version.readline().lstrip('Version: ').rstrip()
 
-    remove_config_file_version_string(config_file_name)
+    # See kludge below; properly, we will remove original version line
+    # here:
+    #remove_config_file_version_string(config_file_name)
 
     with open(config_file_name, 'a') as config_file_handle:
-        config_file_handle.write('\n')
-        config_file_handle.write('/* Warning: Do not remove the following line. */\n')
-        config_file_handle.write('/* === vyatta-config-version: "{}" === */\n'.format(component_versions)) 
-        config_file_handle.write('/* Release version: {} */\n'.format(version_string))
+        config_file_handle.write('@ Warning: Do not remove the following line.\n')
+        config_file_handle.write('@ === vyos-config-version: "{}"\n'.format(component_versions))
+        config_file_handle.write('@ Release version: {}\n'.format(version_string))
 
 def update_config_versions(config_file_name):
     """
-    Invoke migration scripts 'n-to-m' in migration_util_dir to
-    iteratively update components in the config file from version n to
-    m, until config file version is consistent with current system.
+    Iteratively invoke migration scripts 'n-to-(n+1)' or n-to-(n-1)' in
+    migration_util_dir to update components in the config file, until
+    config file version is consistent with current system.
     """
     with open(config_file_name, 'r') as config_file_handle: 
         conf_versions = get_config_file_versions(config_file_handle)
+
+    # kludge until configtree is updated to parse new version syntax
+    remove_config_file_version_string(config_file_name)
 
     sys_versions = get_system_versions()
 
@@ -119,7 +143,7 @@ def update_config_versions(config_file_name):
         else:
             conf_ver = 0
 
-        migrate_script_dir = os.path.join(migrate_util_dir, key)
+        migrate_script_dir = os.path.join(vyatta_migrate_util_dir, key)
 
         while conf_ver != sys_ver:
             if conf_ver < sys_ver:
@@ -129,7 +153,7 @@ def update_config_versions(config_file_name):
 
             #
             migrate_script = os.path.join(migrate_script_dir,
-                    "{}-to-{}".format(conf_ver, next_ver))
+                    '{}-to-{}'.format(conf_ver, next_ver))
 
             # subprocess.run() was introduced in python 3.5;
             # jessie has 3.4.2
@@ -154,16 +178,16 @@ def update_config_versions(config_file_name):
 
 def main():
     argparser = argparse.ArgumentParser()
-    argparser.add_argument("config_file", type=str,
+    argparser.add_argument('config_file', type=str,
             help="configuration file to migrate")
-    argparser.add_argument("--debug", action="store_true",
+    argparser.add_argument('--debug', action='store_true',
             help="Turn on debugging.")
-    argparser.add_argument("--log-to-stdout", action="store_true",
+    argparser.add_argument('--log-to-stdout', action='store_true',
             help="Show log messages on stdout.")
     args = argparser.parse_args()
 
     try:
-        logging.basicConfig(filename=migrate_log, level=logging.INFO,
+        logging.basicConfig(filename=vyatta_migrate_log, level=logging.INFO,
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S')
     except PermissionError as err:

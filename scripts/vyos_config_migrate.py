@@ -120,7 +120,8 @@ def update_config_versions(config_file_name):
     with open(config_file_name, 'r') as config_file_handle: 
         conf_versions = get_config_file_versions(config_file_handle)
 
-    # kludge until configtree is updated to parse new version syntax
+    # kludge until configtree is updated to parse new version syntax,
+    # namely, parse 'non-significant' comments ...
     remove_config_file_version_string(config_file_name)
 
     sys_versions = get_system_versions()

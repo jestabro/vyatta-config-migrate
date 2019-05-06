@@ -8,15 +8,12 @@ import logging
 import subprocess
 import fileinput
 import datetime
+import vyos.version
 
 vyatta_config_migrate_dir = '/opt/vyatta/etc/config-migrate'
 vyatta_system_version_dir = os.path.join(vyatta_config_migrate_dir, 'current')
 vyatta_migrate_util_dir = os.path.join(vyatta_config_migrate_dir, 'migrate')
 vyatta_migrate_log = '/var/log/vyatta/migrate.log'
-vyatta_version = '/opt/vyatta/etc/version'
-# Until directory reorganization
-vyos_version = vyatta_version
-
 
 def get_config_file_versions(config_file_handle):
     """
@@ -99,12 +96,13 @@ def write_config_file_version_string(config_file_name, config_versions):
     separator = ":"
     component_versions = separator.join(config_versions)
 
-    with open(vyos_version, 'r') as version:
-        version_string = version.readline().lstrip('Version: ').rstrip()
+    version_string = vyos.version.get_version()
 
     # See kludge below; properly, we will remove original version line
     # here:
-    #remove_config_file_version_string(config_file_name)
+    # If we pass through non-significant comments, remove old version
+    # lines here:
+    remove_config_file_version_string(config_file_name)
 
     with open(config_file_name, 'a') as config_file_handle:
         config_file_handle.write('// Warning: Do not remove the following line.\n')
@@ -122,7 +120,11 @@ def update_config_versions(config_file_name):
 
     # kludge until configtree is updated to parse new version syntax,
     # namely, parse 'non-significant' comments ...
-    remove_config_file_version_string(config_file_name)
+    # ... recent commit to fork simply ignores non-significant comments
+    # obviating this workaround; if we pass through, then still no
+    # problem --- keep comments until decision made, so as to recall
+    # background.
+    #remove_config_file_version_string(config_file_name)
 
     sys_versions = get_system_versions()
 

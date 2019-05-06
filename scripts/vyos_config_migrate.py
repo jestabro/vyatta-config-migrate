@@ -99,9 +99,10 @@ def write_config_file_version_string(config_file_name, config_versions):
     version_string = vyos.version.get_version()
 
     # See kludge below; properly, we will remove original version line
-    # here:
-    # If we pass through non-significant comments, remove old version
-    # lines here:
+    # here ---
+    # For vyatta style version comments, or if we pass vyos style non-
+    # significant comments through the parser instead of dropping at the
+    # lexer, remove old version lines here:
     remove_config_file_version_string(config_file_name)
 
     with open(config_file_name, 'a') as config_file_handle:
@@ -121,9 +122,7 @@ def update_config_versions(config_file_name):
     # kludge until configtree is updated to parse new version syntax,
     # namely, parse 'non-significant' comments ...
     # ... recent commit to fork simply ignores non-significant comments
-    # obviating this workaround; if we pass through, then still no
-    # problem --- keep comments until decision made, so as to recall
-    # background.
+    # obviating this workaround
     #remove_config_file_version_string(config_file_name)
 
     sys_versions = get_system_versions()

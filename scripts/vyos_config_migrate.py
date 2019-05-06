@@ -37,8 +37,8 @@ def get_config_file_versions(config_file_handle):
                             "{}".format(pair[0], config_line))
                 config_file_versions[pair[0]] = int(pair[1])
 
-        if re.match(r'@ === vyos-config-version:.+', config_line):
-            if not re.match(r'@ === vyos-config-version:\s+"([\w,-]+@\d+:)+([\w,-]+@\d+)"\s*', config_line):
+        if re.match(r'// vyos-config-version:.+', config_line):
+            if not re.match(r'// vyos-config-version:\s+"([\w,-]+@\d+:)+([\w,-]+@\d+)"\s*', config_line):
                 raise ValueError("malformed configuration string: "
                         "{}".format(config_line))
 
@@ -83,11 +83,11 @@ def remove_config_file_version_string(config_file_name):
             continue
         if re.match(r'/\* Release version:.+ \*/$', line):
             continue
-        if re.match('@ === vyos-config-version:.+', line):
+        if re.match('// vyos-config-version:.+', line):
             continue
-        if re.match('@ Warning:.+', line):
+        if re.match('// Warning:.+', line):
             continue
-        if re.match('@ Release version:.+', line):
+        if re.match('// Release version:.+', line):
             continue
         sys.stdout.write(line)
 
@@ -107,9 +107,9 @@ def write_config_file_version_string(config_file_name, config_versions):
     #remove_config_file_version_string(config_file_name)
 
     with open(config_file_name, 'a') as config_file_handle:
-        config_file_handle.write('@ Warning: Do not remove the following line.\n')
-        config_file_handle.write('@ === vyos-config-version: "{}"\n'.format(component_versions))
-        config_file_handle.write('@ Release version: {}\n'.format(version_string))
+        config_file_handle.write('// Warning: Do not remove the following line.\n')
+        config_file_handle.write('// vyos-config-version: "{}"\n'.format(component_versions))
+        config_file_handle.write('// Release version: {}\n'.format(version_string))
 
 def update_config_versions(config_file_name):
     """
